@@ -62,8 +62,8 @@ Uses the cached token — no 2FA needed unless the token has expired.
 You can run this on a schedule using cron:
 
 ```bash
-# Every day at 8am
-0 8 * * * cd /path/to/actual-budget-sync && node sync.mjs >> sync.log 2>&1
+# Every 2 hours
+0 */2 * * * cd /opt/edenred-sync && /usr/bin/node sync.mjs >> /var/log/edenred-sync.log 2>&1
 ```
 
 > **Note**: If the token expires, the cron job will fail and log an error. Run `npm run setup` manually to re-authenticate with 2FA.
