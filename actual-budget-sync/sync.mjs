@@ -206,7 +206,11 @@ async function syncToActualBudget(env, transactions, balance) {
 
   console.log(`\n💰 Syncing to Actual Budget (${serverUrl})...`);
 
-  await api.init({ serverURL: serverUrl, password: serverPassword });
+  await api.init({
+    dataDir: "./data",
+    serverURL: serverUrl,
+    password: serverPassword,
+  });
   await api.downloadBudget(syncId);
 
   // Find or create the account
@@ -248,8 +252,12 @@ async function syncToActualBudget(env, transactions, balance) {
 }
 
 function parseEdenredDate(dateStr) {
-  // Format: "MM/DD/YYYY HH:MM:SS" → "YYYY-MM-DD"
   if (!dateStr) return new Date().toISOString().slice(0, 10);
+  // ISO format: "2026-08-31T13:09:47..."
+  if (dateStr.includes("T") || dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
+    return dateStr.slice(0, 10);
+  }
+  // Slash format: "MM/DD/YYYY HH:MM:SS"
   const parts = dateStr.split(" ")[0].split("/");
   if (parts.length === 3) {
     return `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
