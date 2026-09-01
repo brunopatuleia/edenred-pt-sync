@@ -235,7 +235,7 @@ async function syncToActualBudget(env, transactions, balance) {
       amount: amountCents,
       payee_name: t.transactionName || "Edenred",
       imported_id: `edenred-${t.transactionDate}-${t.transactionName}-${t.amount}`,
-      cleared: true,
+      cleared: false,
     };
   });
 
