@@ -1,0 +1,53 @@
+{
+    "title": "Edenred Portugal",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Edenred Portugal — Login",
+                "description": "Enter your MyEdenred Portugal credentials. A verification code will be sent via SMS.",
+                "data": {
+                    "username": "Email",
+                    "password": "Password",
+                    "include_transactions": "Include transaction history"
+                },
+                "data_description": {
+                    "username": "The email you use to log in at https://www.myedenred.pt/",
+                    "password": "Your MyEdenred password",
+                    "include_transactions": "When enabled, recent transactions are stored as sensor attributes"
+                }
+            },
+            "2fa": {
+                "title": "Two-Factor Authentication",
+                "description": "A verification code has been sent to your phone. Enter the code below.",
+                "data": {
+                    "code": "Verification code"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Re-authenticate with Edenred",
+                "description": "Your session has expired. Please enter your credentials to re-authenticate.",
+                "data": {
+                    "username": "Email",
+                    "password": "Password"
+                }
+            },
+            "reauth_2fa": {
+                "title": "Re-authentication — Verification Code",
+                "description": "A verification code has been sent to your phone. Enter the code below.",
+                "data": {
+                    "code": "Verification code"
+                }
+            }
+        },
+        "error": {
+            "invalid_auth": "Invalid email or password.",
+            "invalid_code": "Invalid verification code. Please try again.",
+            "cannot_connect": "Unable to connect to the Edenred API. Please check your network.",
+            "unknown": "An unexpected error occurred."
+        },
+        "abort": {
+            "already_configured": "This account is already configured.",
+            "reauth_successful": "Re-authentication was successful."
+        }
+    }
+}

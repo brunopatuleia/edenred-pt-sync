@@ -1,0 +1,53 @@
+{
+    "title": "Edenred Portugal",
+    "config": {
+        "step": {
+            "user": {
+                "title": "Edenred Portugal — Iniciar sessão",
+                "description": "Introduza as suas credenciais do MyEdenred Portugal. Será enviado um código de verificação por SMS.",
+                "data": {
+                    "username": "Email",
+                    "password": "Palavra-passe",
+                    "include_transactions": "Incluir histórico de transações"
+                },
+                "data_description": {
+                    "username": "O email utilizado para iniciar sessão em https://www.myedenred.pt/",
+                    "password": "A sua palavra-passe do MyEdenred",
+                    "include_transactions": "Quando ativado, as transações recentes ficam disponíveis como atributos do sensor"
+                }
+            },
+            "2fa": {
+                "title": "Autenticação de dois fatores",
+                "description": "Foi enviado um código de verificação para o seu telemóvel. Introduza o código abaixo.",
+                "data": {
+                    "code": "Código de verificação"
+                }
+            },
+            "reauth_confirm": {
+                "title": "Re-autenticar no Edenred",
+                "description": "A sua sessão expirou. Introduza as suas credenciais para re-autenticar.",
+                "data": {
+                    "username": "Email",
+                    "password": "Palavra-passe"
+                }
+            },
+            "reauth_2fa": {
+                "title": "Re-autenticação — Código de verificação",
+                "description": "Foi enviado um código de verificação para o seu telemóvel. Introduza o código abaixo.",
+                "data": {
+                    "code": "Código de verificação"
+                }
+            }
+        },
+        "error": {
+            "invalid_auth": "Email ou palavra-passe inválidos.",
+            "invalid_code": "Código de verificação inválido. Tente novamente.",
+            "cannot_connect": "Não foi possível ligar à API do Edenred. Verifique a sua ligação à internet.",
+            "unknown": "Ocorreu um erro inesperado."
+        },
+        "abort": {
+            "already_configured": "Esta conta já está configurada.",
+            "reauth_successful": "Re-autenticação concluída com sucesso."
+        }
+    }
+}

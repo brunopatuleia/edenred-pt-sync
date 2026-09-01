@@ -1,0 +1,14 @@
+{
+  "name": "edenred-actual-budget-sync",
+  "version": "1.0.0",
+  "description": "Sync Edenred Portugal transactions to Actual Budget",
+  "main": "sync.mjs",
+  "type": "module",
+  "scripts": {
+    "sync": "node sync.mjs",
+    "setup": "node sync.mjs --setup"
+  },
+  "dependencies": {
+    "@actual-app/api": "^24.0.0"
+  }
+}
