@@ -27,3 +27,4 @@ services:
       # Persistent storage for session tokens and cache
       - ./data:/app/data
       - ./tokens:/app/.token_cache
+

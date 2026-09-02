@@ -1,17 +1,21 @@
 {
   "name": "edenred-actual-budget-sync",
-  "version": "1.0.0",
-  "description": "Sync Edenred Portugal transactions to Actual Budget + Discord alerts + automated 2FA",
+  "version": "1.1.0",
+  "description": "Edenred Portugal Sync & Multi-User Discord Bot",
   "main": "sync.mjs",
   "type": "module",
   "scripts": {
     "sync": "node sync.mjs",
+    "bot": "node bot.mjs",
     "setup": "node sync.mjs --setup",
     "test-discord": "node sync.mjs --test-discord"
   },
   "dependencies": {
     "@actual-app/api": "^26.0.0",
+    "better-sqlite3": "^11.8.1",
+    "discord.js": "^14.18.0",
     "imapflow": "^1.0.171",
-    "mailparser": "^3.7.2"
+    "mailparser": "^3.7.2",
+    "nodemailer": "^6.10.0"
   }
 }
