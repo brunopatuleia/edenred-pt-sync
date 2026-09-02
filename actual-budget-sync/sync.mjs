@@ -1,18 +1,24 @@
 /**
- * Edenred → Actual Budget Sync + Discord Notifications
+ * Edenred → Actual Budget Sync + Discord Notifications + Automated 2FA Email Solver
  *
  * Fetches transactions from the MyEdenred Portugal API, imports them
  * into Actual Budget, and sends Discord notifications for new movements.
  *
+ * Fully Automated:
+ *   If GMAIL_APP_PASSWORD is set, it automatically checks Gmail via IMAP
+ *   for the 5-digit Edenred verification code and logs in with zero manual intervention.
+ *
  * Usage:
- *   node sync.mjs --setup          # First-time setup (prompts for credentials + 2FA)
- *   node sync.mjs                  # Normal sync (uses cached token)
+ *   node sync.mjs                  # Normal automated sync
+ *   node sync.mjs --setup          # Interactive setup
  *   node sync.mjs --test-discord   # Test Discord webhook notification
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { createInterface } from "readline";
 import api from "@actual-app/api";
+import { ImapFlow } from "imapflow";
+import { simpleParser } from "mailparser";
 
 // ---------------------------------------------------------------------------
 // Config
@@ -61,7 +67,7 @@ function loadSeenTransactions() {
       return [];
     }
   }
-  return null; // null indicates first initialization
+  return null;
 }
 
 function saveSeenTransactions(seenIds) {
@@ -70,6 +76,58 @@ function saveSeenTransactions(seenIds) {
 
 function getTxId(t) {
   return `edenred-${t.transactionDate}-${t.transactionName}-${t.amount}`;
+}
+
+// ---------------------------------------------------------------------------
+// Automated 2FA Email Fetcher (Gmail IMAP)
+// ---------------------------------------------------------------------------
+
+async function fetchEmail2FACode(email, appPassword, maxWaitSeconds = 45) {
+  console.log("📬 Waiting for Edenred 2FA email in Gmail...");
+  const startTime = Date.now();
+
+  const client = new ImapFlow({
+    host: "imap.gmail.com",
+    port: 993,
+    secure: true,
+    auth: {
+      user: email,
+      pass: appPassword.replace(/\s+/g, ""),
+    },
+    logger: false,
+  });
+
+  await client.connect();
+  const lock = await client.getMailboxLock("INBOX");
+
+  try {
+    while (Date.now() - startTime < maxWaitSeconds * 1000) {
+      const uids = await client.search({ from: "appmyedenred.pt" }, { uid: true });
+      if (uids && uids.length > 0) {
+        const latestUid = uids[uids.length - 1];
+        const msg = await client.fetchOne(latestUid, { envelope: true, source: true }, { uid: true });
+        const emailTime = new Date(msg.envelope.date).getTime();
+
+        // Check if email was received within last 3 minutes or since login initiated
+        if (emailTime >= startTime - 30000) {
+          const parsed = await simpleParser(msg.source);
+          const body = parsed.html || parsed.text || "";
+          const match = body.match(/<b>\s*(\d{5})\s*<\/b>/i) || body.match(/\b\d{5}\b/);
+          if (match) {
+            const code = match[1] || match[0];
+            console.log(`✅ Automatically retrieved 2FA code from email: ${code}`);
+            return code;
+          }
+        }
+      }
+      // Poll every 3 seconds
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    throw new Error("Timed out waiting for Edenred 2FA email from Gmail");
+  } finally {
+    lock.release();
+    await client.logout();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -178,10 +236,10 @@ function saveCachedToken(token) {
 }
 
 // ---------------------------------------------------------------------------
-// Edenred Auth (Interactive)
+// Edenred Authentication (Automated via Gmail or Interactive)
 // ---------------------------------------------------------------------------
 
-async function authenticateInteractive(email, password) {
+async function authenticate(email, password, env) {
   console.log("🔐 Logging in to Edenred...");
   const { token, challengeId } = await edenredLogin(email, password);
 
@@ -191,8 +249,14 @@ async function authenticateInteractive(email, password) {
     return token;
   }
 
-  console.log("📱 2FA code sent to your phone");
-  const code = await prompt("Enter the SMS code: ");
+  let code = "";
+  if (env.GMAIL_APP_PASSWORD) {
+    code = await fetchEmail2FACode(email, env.GMAIL_APP_PASSWORD);
+  } else {
+    console.log("📱 2FA code sent to your email");
+    code = await prompt("Enter the verification code: ");
+  }
+
   const jwt = await edenredSubmitChallenge(email, password, challengeId, code);
   console.log("✅ Authenticated successfully");
   saveCachedToken(jwt);
@@ -207,7 +271,7 @@ async function sendDiscordNotification(webhookUrl, transaction, balance, card) {
   const isDeposit = transaction.amount >= 0;
   const absAmount = Math.abs(transaction.amount).toFixed(2);
   const sign = isDeposit ? "+" : "-";
-  const color = isDeposit ? 0x2ecc71 : 0xe74c3c; // Green or Red
+  const color = isDeposit ? 0x2ecc71 : 0xe74c3c;
   const title = isDeposit ? "💰 Edenred — Entrada de Saldo" : "💳 Edenred — Novo Movimento";
   const cardLast4 = card?.number ? card.number.slice(-4) : "Card";
 
@@ -373,7 +437,7 @@ async function main() {
   }
 
   if (!token) {
-    token = await authenticateInteractive(email, password);
+    token = await authenticate(email, password, env);
   }
 
   console.log("\n📋 Fetching Edenred data...");
