@@ -9,10 +9,10 @@ An automated bridge for **MyEdenred Portugal** that connects your meal card move
 
 ---
 
-## 🌟 Disclaimer & Credits
+## 🌟 Credits & Disclaimer
 
-> **Project Lead & Architect ("The Maestro")**: [Bruno Patuleia](https://github.com/brunopatuleia)  
-> **AI Development**: Developed with AI pair-programming assistance by **Claude Opus** & **Gemini 3.7 Flash** via *Google Antigravity*.
+> **Author**: [Bruno Patuleia](https://github.com/brunopatuleia)  
+> **Development**: Built with AI assistance via *Google Antigravity* (Claude Opus & Gemini 3.7 Flash).
 
 *Note: This project is an independent open-source tool and is not affiliated with, sponsored, or endorsed by [Edenred](https://www.edenred.pt/) or [MyEdenred Portugal](https://www.myedenred.pt/).*
 
@@ -62,7 +62,6 @@ Clone the repository and install dependencies:
 
 ```bash
 git clone https://github.com/brunopatuleia/edenred-pt-sync.git
-cd edenred-pt-sync
 npm install
 ```
 

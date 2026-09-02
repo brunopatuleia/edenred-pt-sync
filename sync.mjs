@@ -8,8 +8,7 @@
  *   2. Discord Webhooks (rich embed notifications)
  *   3. Gmail IMAP (100% zero-touch automated 2FA code extraction)
  *
- * @author Bruno Patuleia (Architect & Project Lead)
- * @author Claude Opus & Gemini 3.7 Flash via Google Antigravity (AI Development)
+ * @author Bruno Patuleia
  * @license MIT
  * ============================================================================
  */
