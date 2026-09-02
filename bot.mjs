@@ -278,39 +278,28 @@ client.on("interactionCreate", async (interaction) => {
       const { commandName } = interaction;
 
       if (commandName === "login") {
-        // Show Login Modal
-        const modal = new ModalBuilder()
-          .setCustomId("modal_login")
-          .setTitle("Ligar Conta MyEdenred Portugal");
+        const embed = new EmbedBuilder()
+          .setTitle("🔐 Ligar Conta MyEdenred Portugal")
+          .setColor(0x3498db)
+          .setDescription(
+            "Para receberes notificações automáticas e consultares o teu saldo, clica no botão **Ligar Conta** abaixo.\n\n" +
+            "💡 **Dica (2FA 100% Automático):**\n" +
+            "Se usas Gmail, podes gerar uma **Palavra-passe de Aplicação** no Google para o bot ler o código de 5 dígitos sozinho sem te pedir nada!"
+          )
+          .setFooter({ text: "Os teus dados são processados de forma privada." });
 
-        const emailInput = new TextInputBuilder()
-          .setCustomId("input_email")
-          .setLabel("Email do MyEdenred")
-          .setPlaceholder("o-teu-email@gmail.com")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const passInput = new TextInputBuilder()
-          .setCustomId("input_password")
-          .setLabel("Palavra-passe do MyEdenred")
-          .setPlaceholder("A tua palavra-passe do MyEdenred")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const gmailInput = new TextInputBuilder()
-          .setCustomId("input_gmail_pass")
-          .setLabel("App Password Gmail (2FA Automático)")
-          .setPlaceholder("Opcional: xxxx xxxx xxxx xxxx")
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(emailInput),
-          new ActionRowBuilder().addComponents(passInput),
-          new ActionRowBuilder().addComponents(gmailInput)
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setCustomId("btn_open_login_modal")
+            .setLabel("🔐 Ligar Conta")
+            .setStyle(ButtonStyle.Success),
+          new ButtonBuilder()
+            .setLabel("🌐 Criar App Password no Google")
+            .setStyle(ButtonStyle.Link)
+            .setURL("https://myaccount.google.com/apppasswords")
         );
 
-        await interaction.showModal(modal);
+        await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
         return;
       }
 
@@ -506,6 +495,42 @@ client.on("interactionCreate", async (interaction) => {
     // Button Interactions
     // ------------------------------------------------------------------------
     if (interaction.isButton()) {
+      if (interaction.customId === "btn_open_login_modal") {
+        const modal = new ModalBuilder()
+          .setCustomId("modal_login")
+          .setTitle("Ligar Conta MyEdenred Portugal");
+
+        const emailInput = new TextInputBuilder()
+          .setCustomId("input_email")
+          .setLabel("Email do MyEdenred")
+          .setPlaceholder("o-teu-email@gmail.com")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const passInput = new TextInputBuilder()
+          .setCustomId("input_password")
+          .setLabel("Palavra-passe do MyEdenred")
+          .setPlaceholder("A tua palavra-passe do MyEdenred")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+
+        const gmailInput = new TextInputBuilder()
+          .setCustomId("input_gmail_pass")
+          .setLabel("App Password Gmail (2FA Automático)")
+          .setPlaceholder("Opcional: cria em myaccount.google.com/apppasswords")
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(emailInput),
+          new ActionRowBuilder().addComponents(passInput),
+          new ActionRowBuilder().addComponents(gmailInput)
+        );
+
+        await interaction.showModal(modal);
+        return;
+      }
+
       if (interaction.customId === "btn_enter_2fa") {
         const modal = new ModalBuilder()
           .setCustomId("modal_2fa_code")
@@ -687,8 +712,13 @@ async function pollAllUsers() {
 // Bot Startup
 // ============================================================================
 
+client.on("guildCreate", (guild) => {
+  console.log(`🎉 Bot adicionado ao servidor: ${guild.name} (ID: ${guild.id})!`);
+});
+
 client.once("ready", async () => {
   console.log(`🤖 Bot ligado como ${client.user.tag}!`);
+  console.log(`🏰 Servidores atuais (${client.guilds.cache.size}):`, client.guilds.cache.map((g) => g.name).join(", ") || "Nenhum ainda");
   await registerSlashCommands();
 
   // Start background polling loop
