@@ -1,144 +1,166 @@
-# Edenred Portugal — Home Assistant Integration
+# 💳 Edenred Portugal Sync & Alerts
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-![License](https://img.shields.io/github/license/YOUR_USERNAME/ha-edenred-pt?style=for-the-badge)
+[![Node.js](https://img.shields.io/badge/Node.js-20%2B-green.svg)](https://nodejs.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Actual Budget](https://img.shields.io/badge/Actual%20Budget-API%20v26-5c3dbb.svg)](https://actualbudget.org/)
+[![Discord](https://img.shields.io/badge/Discord-Webhook%20Alerts-5865F2.svg)](https://discord.com/)
 
-Custom component for [Home Assistant](https://www.home-assistant.io/) that displays your **MyEdenred Portugal** meal card balance and transaction history.
+An automated bridge for **MyEdenred Portugal** that connects your meal card movements directly to **Actual Budget** and sends instant **Discord notifications** whenever money enters or leaves your account — with **100% zero-touch automated 2FA**.
 
-> **Note**: This project is not affiliated with or endorsed by [Edenred](https://www.edenred.pt/).
+---
 
-## Features
+## 🌟 Disclaimer & Credits
 
-- 💳 Card balance as a sensor entity
-- 📊 Transaction history as sensor attributes
-- 🔐 Two-factor authentication (SMS) support
-- 🔄 Automatic polling every 60 minutes
-- 🔁 Re-authentication notification when session expires
+> **Project Lead & Architect ("The Maestro")**: [Bruno Patuleia](https://github.com/brunopatuleia)  
+> **AI Development**: Developed with AI pair-programming assistance by **Claude Opus** & **Gemini 3.7 Flash** via *Google Antigravity*.
 
-## Installation
+*Note: This project is an independent open-source tool and is not affiliated with, sponsored, or endorsed by [Edenred](https://www.edenred.pt/) or [MyEdenred Portugal](https://www.myedenred.pt/).*
 
-### HACS (Recommended)
+---
 
-1. Open HACS in your Home Assistant instance
-2. Click the three dots in the top right → **Custom repositories**
-3. Add this repository URL and select **Integration** as the category
-4. Search for **"Edenred Portugal"** and install it
-5. Restart Home Assistant
+## ✨ Features
 
-### Manual
+- 💰 **Actual Budget Sync**: Automatically imports card transactions and balance via `@actual-app/api` with automatic deduplication. Transactions arrive **uncleared / unchecked** so you can review and categorize them.
+- 🔔 **Instant Discord Alerts**:
+  - 🟢 **Deposits / Subsídio de Refeição**: Rich green embed with amount credited and updated balance.
+  - 🔴 **Purchases**: Rich red embed with merchant name, amount spent, and updated balance.
+- 🤖 **100% Zero-Touch 2FA**: Connects to Gmail via IMAP using a Google App Password to automatically extract the 5-digit verification code. No manual SMS/email entry ever needed.
+- ⏰ **Set & Forget Automation**: Runs seamlessly via `cron` or `systemd` on any server or LXC container.
 
-1. Copy the `custom_components/edenred_pt/` folder to your Home Assistant's `custom_components/` directory
-2. Restart Home Assistant
+---
 
-## Configuration
+## 🏗️ Architecture
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **"Edenred Portugal"**
-3. Enter your MyEdenred email and password
-4. Enter the SMS verification code sent to your phone
-5. Done! Your card balance will appear as a sensor
-
-### Options
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| Email | — | Your MyEdenred Portugal login email |
-| Password | — | Your MyEdenred Portugal password |
-| Include transactions | `false` | Store recent transactions as sensor attributes |
-
-## Sensor
-
-The integration creates one sensor per card:
-
-- **State**: Current available balance (€)
-- **Device class**: `monetary`
-- **Unit**: `€`
-
-### Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| `owner_name` | Card holder name |
-| `card_status` | Card status (ACTIVE, etc.) |
-| `card_number` | Full card number |
-| `transactions` | List of recent transactions (if enabled) |
-
-Each transaction in the list contains:
-
-| Field | Description |
-|-------|-------------|
-| `date` | Transaction date and time |
-| `name` | Merchant / description |
-| `amount` | Amount (positive = credit, negative = purchase) |
-
-## Displaying Transactions
-
-### Using a custom:list-card
-
-```yaml
-type: custom:list-card
-entity: sensor.edenred_card_XXXXXXX
-feed_attribute: transactions
-title: Edenred Transactions
-row_limit: 10
-columns:
-  - title: Data
-    field: date
-  - title: Descrição
-    field: name
-  - title: Valor
-    field: amount
-    postfix: ' €'
-    style:
-      - text-align: right
-      - white-space: nowrap
+```
+                       ┌──────────────────────┐
+                       │  MyEdenred PT (v2)   │
+                       └──────────┬───────────┘
+                                  │
+                  Session Expired?│ (Requests 2FA)
+                                  ▼
+┌──────────────────┐    IMAP ┌─────────┐
+│     sync.mjs     │ ◄───────┤  Gmail  │ (Reads 5-digit code)
+└────────┬─────────┘         └─────────┘
+         │
+         ├───► 💰 Actual Budget Server (Imports new movements, uncleared)
+         │
+         └───► 🔔 Discord Webhook (Sends Green/Red rich embeds)
 ```
 
-### Using Markdown card
+---
 
-```yaml
-type: markdown
-title: Últimos Movimentos
-content: >
-  | Data | Descrição | Valor |
-  |------|-----------|-------|
-  {% for t in state_attr('sensor.edenred_card_XXXXXXX', 'transactions') %}
-  | {{ t.date[:10] }} | {{ t.name }} | {{ t.amount }} € |
-  {% endfor %}
+## 🚀 Quick Start
+
+### 1. Prerequisites
+
+- **Node.js** v18 or later (Node 20+ recommended)
+- **npm** v10+
+
+### 2. Installation
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/YOUR_USERNAME/edenred-pt-sync.git
+cd edenred-pt-sync
+npm install
 ```
 
-## Two-Factor Authentication
+### 3. Configuration
 
-This integration supports Edenred's mandatory SMS-based 2FA:
+Copy the example environment file:
 
-1. **During setup**: After entering your credentials, you'll receive an SMS code
-2. **Token persistence**: The authentication token is stored and reused across HA restarts
-3. **Re-authentication**: If the token expires, HA will show a notification asking you to re-authenticate
+```bash
+cp .env.example .env
+```
 
-## Actual Budget Sync
+Edit `.env` with your settings:
 
-This repository includes a standalone Node.js script to sync Edenred transactions to [Actual Budget](https://actualbudget.org/). See the [`actual-budget-sync/`](actual-budget-sync/) directory for details.
+```env
+# ==========================================
+# MyEdenred Portugal Credentials
+# ==========================================
+EDENRED_EMAIL=your-email@gmail.com
+EDENRED_PASSWORD=your-edenred-password
 
-## Troubleshooting
+# ==========================================
+# Automated 2FA via Gmail (100% Zero-Touch)
+# ==========================================
+# Generate at: https://myaccount.google.com/apppasswords
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 
-### "Cannot connect" error
-- Check that https://www.myedenred.pt/ is accessible
-- Edenred's servers are known to have issues at the beginning of each month
+# ==========================================
+# Actual Budget (Optional)
+# ==========================================
+ACTUAL_SERVER_URL=http://localhost:5006
+ACTUAL_PASSWORD=your-actual-budget-password
+ACTUAL_SYNC_ID=your-budget-sync-id
+ACTUAL_ACCOUNT_NAME=Edenred
 
-### "Invalid code" error
-- SMS codes expire quickly — enter the code promptly after receiving it
-- Request a new code by going back and re-entering your credentials
+# ==========================================
+# Discord Notifications (Optional)
+# ==========================================
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+```
 
-### Sensor shows "unavailable"
-- The authentication token may have expired
-- Check for a re-authentication notification in HA
+> **Finding your Actual Budget Sync ID**:  
+> In Actual Budget, go to **Settings → Show advanced settings → Sync ID**.
 
-## Legal Notice
+---
 
-This is a personal project and is not in any way affiliated with, sponsored, or endorsed by [Edenred](https://www.edenred.pt/) or [MyEdenred Portugal](https://www.myedenred.pt/).
+## 🧪 Testing
 
-All product names, trademarks, and registered trademarks are property of their respective owners.
+### Test live sync:
+```bash
+node sync.mjs
+```
 
-## License
+### Test Discord webhook notification:
+```bash
+node sync.mjs --test-discord
+```
 
-[MIT](LICENSE)
+---
+
+## ⏰ Automated Scheduling (Cron)
+
+To run the sync automatically every 2 hours:
+
+```bash
+crontab -e
+```
+
+Add the following line:
+
+```bash
+0 */2 * * * cd /path/to/edenred-pt-sync && /usr/bin/node sync.mjs >> /var/log/edenred-sync.log 2>&1
+```
+
+---
+
+## 📁 Project Structure
+
+```
+.
+├── .env.example          # Template configuration
+├── .gitignore            # Git ignore rules (protects credentials & cache)
+├── CHANGELOG.md          # Release history
+├── LICENSE               # MIT License
+├── README.md             # Project documentation
+├── package.json          # Node dependencies (@actual-app/api, imapflow, mailparser)
+└── sync.mjs              # Main synchronization & notification engine
+```
+
+---
+
+## 🔒 Security & Privacy
+
+- **Zero credential leaks**: All passwords, tokens, and webhooks are strictly kept in your local `.env` and `.token_cache` (both gitignored).
+- **Google App Passwords**: Uses scoped Google App Passwords for IMAP access instead of primary Google account credentials.
+- **Direct local connection**: Actual Budget communication can be run entirely over local loopback (`http://localhost:5006`).
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

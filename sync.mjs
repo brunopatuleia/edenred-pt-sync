@@ -1,17 +1,17 @@
 /**
- * Edenred → Actual Budget Sync + Discord Notifications + Automated 2FA Email Solver
+ * ============================================================================
+ * Edenred Portugal → Actual Budget Sync & Discord Notification Engine
+ * ============================================================================
  *
- * Fetches transactions from the MyEdenred Portugal API, imports them
- * into Actual Budget, and sends Discord notifications for new movements.
+ * Automated bridge connecting the MyEdenred Portugal API (v2) with:
+ *   1. Actual Budget (via @actual-app/api)
+ *   2. Discord Webhooks (rich embed notifications)
+ *   3. Gmail IMAP (100% zero-touch automated 2FA code extraction)
  *
- * Fully Automated:
- *   If GMAIL_APP_PASSWORD is set, it automatically checks Gmail via IMAP
- *   for the 5-digit Edenred verification code and logs in with zero manual intervention.
- *
- * Usage:
- *   node sync.mjs                  # Normal automated sync
- *   node sync.mjs --setup          # Interactive setup
- *   node sync.mjs --test-discord   # Test Discord webhook notification
+ * @author Bruno Patuleia (Architect & Project Lead)
+ * @author Claude Opus & Gemini 3.7 Flash via Google Antigravity (AI Development)
+ * @license MIT
+ * ============================================================================
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -20,14 +20,22 @@ import api from "@actual-app/api";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Configuration & Constants
+// ============================================================================
 
 const CONFIG_FILE = ".env";
 const TOKEN_CACHE_FILE = ".token_cache";
 const SEEN_TX_FILE = ".seen_transactions.json";
 
+// Edenred Portugal API v2 Endpoints
+const EDENRED_BASE = "https://www.myedenred.pt/edenred-customer/v2";
+const EDENRED_PARAMS = "appVersion=1.0&appType=PORTAL&channel=WEB";
+
+/**
+ * Loads environment variables from local .env file and merges with process.env.
+ * @returns {Record<string, string>}
+ */
 function loadEnv() {
   const env = {};
   if (existsSync(CONFIG_FILE)) {
@@ -45,6 +53,11 @@ function loadEnv() {
   return { ...env, ...process.env };
 }
 
+/**
+ * CLI prompt helper for manual / interactive 2FA input fallback.
+ * @param {string} question
+ * @returns {Promise<string>}
+ */
 function prompt(question) {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
@@ -55,10 +68,14 @@ function prompt(question) {
   });
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Seen Transactions Cache
-// ---------------------------------------------------------------------------
+// ============================================================================
 
+/**
+ * Loads the list of transaction IDs that have already been notified.
+ * @returns {string[] | null} null if running for the first time
+ */
 function loadSeenTransactions() {
   if (existsSync(SEEN_TX_FILE)) {
     try {
@@ -70,18 +87,36 @@ function loadSeenTransactions() {
   return null;
 }
 
+/**
+ * Persists the notified transaction IDs to avoid duplicate alerts.
+ * @param {string[]} seenIds
+ */
 function saveSeenTransactions(seenIds) {
   writeFileSync(SEEN_TX_FILE, JSON.stringify(seenIds, null, 2), "utf-8");
 }
 
+/**
+ * Generates a unique deterministic ID for an Edenred transaction.
+ * @param {object} t
+ * @returns {string}
+ */
 function getTxId(t) {
   return `edenred-${t.transactionDate}-${t.transactionName}-${t.amount}`;
 }
 
-// ---------------------------------------------------------------------------
+// ============================================================================
 // Automated 2FA Email Fetcher (Gmail IMAP)
-// ---------------------------------------------------------------------------
+// ============================================================================
 
+/**
+ * Connects to Gmail via IMAP and retrieves the 5-digit 2FA code sent by Edenred.
+ * Polls for incoming emails up to maxWaitSeconds.
+ *
+ * @param {string} email - Gmail address
+ * @param {string} appPassword - 16-character Google App Password
+ * @param {number} maxWaitSeconds - Maximum wait time in seconds (default 45s)
+ * @returns {Promise<string>} 5-digit verification code
+ */
 async function fetchEmail2FACode(email, appPassword, maxWaitSeconds = 45) {
   console.log("📬 Waiting for Edenred 2FA email in Gmail...");
   const startTime = Date.now();
@@ -102,16 +137,18 @@ async function fetchEmail2FACode(email, appPassword, maxWaitSeconds = 45) {
 
   try {
     while (Date.now() - startTime < maxWaitSeconds * 1000) {
+      // Search for emails from Edenred's notification sender
       const uids = await client.search({ from: "appmyedenred.pt" }, { uid: true });
       if (uids && uids.length > 0) {
         const latestUid = uids[uids.length - 1];
         const msg = await client.fetchOne(latestUid, { envelope: true, source: true }, { uid: true });
         const emailTime = new Date(msg.envelope.date).getTime();
 
-        // Check if email was received within last 3 minutes or since login initiated
+        // Check if the email was received around the time of login initiation
         if (emailTime >= startTime - 30000) {
           const parsed = await simpleParser(msg.source);
           const body = parsed.html || parsed.text || "";
+          // Extract 5-digit code formatted inside <b> tags or text
           const match = body.match(/<b>\s*(\d{5})\s*<\/b>/i) || body.match(/\b\d{5}\b/);
           if (match) {
             const code = match[1] || match[0];
@@ -120,7 +157,7 @@ async function fetchEmail2FACode(email, appPassword, maxWaitSeconds = 45) {
           }
         }
       }
-      // Poll every 3 seconds
+      // Wait 3 seconds before next IMAP poll
       await new Promise((r) => setTimeout(r, 3000));
     }
     throw new Error("Timed out waiting for Edenred 2FA email from Gmail");
@@ -130,13 +167,18 @@ async function fetchEmail2FACode(email, appPassword, maxWaitSeconds = 45) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Edenred API
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Edenred API Client (v2)
+// ============================================================================
 
-const EDENRED_BASE = "https://www.myedenred.pt/edenred-customer/v2";
-const EDENRED_PARAMS = "appVersion=1.0&appType=PORTAL&channel=WEB";
-
+/**
+ * Initiates authentication with the MyEdenred v2 API.
+ * Returns either a direct JWT token or a challengeId requiring 2FA.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @returns {Promise<{token: string|null, challengeId: number|null}>}
+ */
 async function edenredLogin(email, password) {
   const res = await fetch(
     `${EDENRED_BASE}/authenticate/default?${EDENRED_PARAMS}`,
@@ -155,9 +197,18 @@ async function edenredLogin(email, password) {
   if (body?.data?.token) return { token: body.data.token, challengeId: null };
   if (body?.data?.challengeId) return { token: null, challengeId: body.data.challengeId };
 
-  throw new Error("Unexpected login response");
+  throw new Error("Unexpected login response from Edenred API");
 }
 
+/**
+ * Submits the 2FA verification code to resolve the challenge.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @param {number} challengeId
+ * @param {string} code
+ * @returns {Promise<string>} JWT bearer token
+ */
 async function edenredSubmitChallenge(email, password, challengeId, code) {
   const res = await fetch(
     `${EDENRED_BASE}/authenticate/default/challenge?${EDENRED_PARAMS}`,
@@ -175,12 +226,17 @@ async function edenredSubmitChallenge(email, password, challengeId, code) {
   const body = await res.json();
 
   if (!res.ok || !body?.data?.token) {
-    throw new Error(`2FA failed: ${body?.internalCode || res.status}`);
+    throw new Error(`2FA validation failed: ${body?.internalCode || res.status}`);
   }
 
   return body.data.token;
 }
 
+/**
+ * Retrieves the list of cards for the authenticated user.
+ * @param {string} token - JWT bearer token
+ * @returns {Promise<object[]>}
+ */
 async function edenredGetCards(token) {
   const res = await fetch(
     `${EDENRED_BASE}/protected/card/list?${EDENRED_PARAMS}`,
@@ -199,6 +255,12 @@ async function edenredGetCards(token) {
   return body?.data || [];
 }
 
+/**
+ * Retrieves account balance and transaction movements for a specific card.
+ * @param {string} token - JWT bearer token
+ * @param {string|number} cardId - Edenred card ID
+ * @returns {Promise<{balance: number, transactions: object[]}>}
+ */
 async function edenredGetTransactions(token, cardId) {
   const res = await fetch(
     `${EDENRED_BASE}/protected/card/${cardId}/accountmovement?${EDENRED_PARAMS}`,
@@ -211,7 +273,7 @@ async function edenredGetTransactions(token, cardId) {
   );
 
   if (res.status === 401) throw new Error("TOKEN_EXPIRED");
-  if (!res.ok) throw new Error(`Failed to fetch account: ${res.status}`);
+  if (!res.ok) throw new Error(`Failed to fetch account movements: ${res.status}`);
 
   const body = await res.json();
   return {
@@ -220,9 +282,9 @@ async function edenredGetTransactions(token, cardId) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Token Cache
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Token Storage & Authentication Flow
+// ============================================================================
 
 function loadCachedToken() {
   if (existsSync(TOKEN_CACHE_FILE)) {
@@ -235,10 +297,15 @@ function saveCachedToken(token) {
   writeFileSync(TOKEN_CACHE_FILE, token, "utf-8");
 }
 
-// ---------------------------------------------------------------------------
-// Edenred Authentication (Automated via Gmail or Interactive)
-// ---------------------------------------------------------------------------
-
+/**
+ * Handles full authentication: attempts login, retrieves 2FA code via Gmail IMAP
+ * (or fallback prompt), and caches the resulting JWT token.
+ *
+ * @param {string} email
+ * @param {string} password
+ * @param {Record<string, string>} env
+ * @returns {Promise<string>}
+ */
 async function authenticate(email, password, env) {
   console.log("🔐 Logging in to Edenred...");
   const { token, challengeId } = await edenredLogin(email, password);
@@ -263,15 +330,23 @@ async function authenticate(email, password, env) {
   return jwt;
 }
 
-// ---------------------------------------------------------------------------
-// Discord Notifications
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Discord Webhook Notifications
+// ============================================================================
 
+/**
+ * Sends a rich Discord embed for an Edenred transaction movement.
+ *
+ * @param {string} webhookUrl - Discord webhook URL
+ * @param {object} transaction - Edenred transaction object
+ * @param {number} balance - Current available balance
+ * @param {object} card - Edenred card object
+ */
 async function sendDiscordNotification(webhookUrl, transaction, balance, card) {
   const isDeposit = transaction.amount >= 0;
   const absAmount = Math.abs(transaction.amount).toFixed(2);
   const sign = isDeposit ? "+" : "-";
-  const color = isDeposit ? 0x2ecc71 : 0xe74c3c;
+  const color = isDeposit ? 0x2ecc71 : 0xe74c3c; // Green (Deposit) vs Red (Purchase)
   const title = isDeposit ? "💰 Edenred — Entrada de Saldo" : "💳 Edenred — Novo Movimento";
   const cardLast4 = card?.number ? card.number.slice(-4) : "Card";
 
@@ -332,10 +407,18 @@ async function sendDiscordNotification(webhookUrl, transaction, balance, card) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Actual Budget
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Actual Budget Synchronization
+// ============================================================================
 
+/**
+ * Imports transactions into Actual Budget using @actual-app/api.
+ * Automatically marks transactions as uncleared (cleared: false) for manual review.
+ *
+ * @param {Record<string, string>} env
+ * @param {object[]} transactions - List of Edenred movements
+ * @param {number} balance - Current card balance
+ */
 async function syncToActualBudget(env, transactions, balance) {
   const serverUrl = env.ACTUAL_SERVER_URL;
   const serverPassword = env.ACTUAL_PASSWORD;
@@ -343,7 +426,7 @@ async function syncToActualBudget(env, transactions, balance) {
   const accountName = env.ACTUAL_ACCOUNT_NAME || "Edenred";
 
   if (!serverUrl || !serverPassword || !syncId) {
-    console.log("⚠️  Actual Budget not configured — skipping sync");
+    console.log("⚠️  Actual Budget not configured — skipping budget sync");
     return;
   }
 
@@ -367,6 +450,7 @@ async function syncToActualBudget(env, transactions, balance) {
     account = { id, name: accountName };
   }
 
+  // Convert to Actual Budget transaction format
   const abTransactions = transactions.map((t) => {
     const date = parseEdenredDate(t.transactionDate);
     const amountCents = Math.round((t.amount || 0) * 100);
@@ -376,7 +460,7 @@ async function syncToActualBudget(env, transactions, balance) {
       amount: amountCents,
       payee_name: t.transactionName || "Edenred",
       imported_id: getTxId(t),
-      cleared: false,
+      cleared: false, // Imported as unchecked / uncleared
     };
   });
 
@@ -390,6 +474,11 @@ async function syncToActualBudget(env, transactions, balance) {
   await api.shutdown();
 }
 
+/**
+ * Normalizes Edenred date strings into ISO "YYYY-MM-DD" format.
+ * @param {string} dateStr
+ * @returns {string}
+ */
 function parseEdenredDate(dateStr) {
   if (!dateStr) return new Date().toISOString().slice(0, 10);
   if (dateStr.includes("T") || dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
@@ -402,9 +491,9 @@ function parseEdenredDate(dateStr) {
   return dateStr.slice(0, 10);
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+// ============================================================================
+// Main Execution Loop
+// ============================================================================
 
 async function main() {
   const env = loadEnv();
@@ -422,6 +511,7 @@ async function main() {
 
   let token = isSetup ? null : loadCachedToken();
 
+  // Test if cached token is still valid
   if (token) {
     try {
       await edenredGetCards(token);
@@ -436,10 +526,12 @@ async function main() {
     }
   }
 
+  // Authenticate if no valid token
   if (!token) {
     token = await authenticate(email, password, env);
   }
 
+  // Retrieve user cards & movements
   console.log("\n📋 Fetching Edenred data...");
   const cards = await edenredGetCards(token);
   console.log(`   Found ${cards.length} card(s)`);
@@ -454,7 +546,7 @@ async function main() {
     console.log(`   Balance: €${balance}`);
     console.log(`   Transactions: ${transactions.length}`);
 
-    // Check for new transactions for Discord notifications
+    // Detect new movements that haven't been alerted on Discord
     const newTxList = [];
     for (const t of transactions) {
       const id = getTxId(t);
@@ -464,7 +556,7 @@ async function main() {
       }
     }
 
-    // Send notifications
+    // Discord Notifications
     if (discordWebhook) {
       if (isTestDiscord && transactions.length > 0) {
         console.log("\n🧪 Sending test Discord notification for latest transaction...");
@@ -479,7 +571,7 @@ async function main() {
       }
     }
 
-    // Sync to Actual Budget
+    // Actual Budget Import
     await syncToActualBudget(env, transactions, balance);
   }
 
