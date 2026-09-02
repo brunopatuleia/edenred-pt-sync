@@ -1,20 +1,13 @@
 /**
- * Edenred → Actual Budget Sync
+ * Edenred → Actual Budget Sync + Discord Notifications
  *
- * Fetches transactions from the MyEdenred Portugal API and imports them
- * into Actual Budget. Requires a one-time 2FA setup.
+ * Fetches transactions from the MyEdenred Portugal API, imports them
+ * into Actual Budget, and sends Discord notifications for new movements.
  *
  * Usage:
- *   node sync.mjs --setup     # First-time setup (prompts for credentials + 2FA)
- *   node sync.mjs             # Sync transactions (uses cached token)
- *
- * Environment variables (or .env file):
- *   ACTUAL_SERVER_URL    - Actual Budget server URL (e.g. http://localhost:5006)
- *   ACTUAL_PASSWORD      - Actual Budget password
- *   ACTUAL_SYNC_ID       - Actual Budget sync ID (budget ID)
- *   ACTUAL_ACCOUNT_NAME  - Actual Budget account name to sync to (e.g. "Edenred")
- *   EDENRED_EMAIL        - MyEdenred email
- *   EDENRED_PASSWORD     - MyEdenred password
+ *   node sync.mjs --setup          # First-time setup (prompts for credentials + 2FA)
+ *   node sync.mjs                  # Normal sync (uses cached token)
+ *   node sync.mjs --test-discord   # Test Discord webhook notification
  */
 
 import { readFileSync, writeFileSync, existsSync } from "fs";
@@ -27,6 +20,7 @@ import api from "@actual-app/api";
 
 const CONFIG_FILE = ".env";
 const TOKEN_CACHE_FILE = ".token_cache";
+const SEEN_TX_FILE = ".seen_transactions.json";
 
 function loadEnv() {
   const env = {};
@@ -42,7 +36,6 @@ function loadEnv() {
       env[key] = value;
     }
   }
-  // Process env vars override .env file
   return { ...env, ...process.env };
 }
 
@@ -54,6 +47,29 @@ function prompt(question) {
       resolve(answer.trim());
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Seen Transactions Cache
+// ---------------------------------------------------------------------------
+
+function loadSeenTransactions() {
+  if (existsSync(SEEN_TX_FILE)) {
+    try {
+      return JSON.parse(readFileSync(SEEN_TX_FILE, "utf-8"));
+    } catch {
+      return [];
+    }
+  }
+  return null; // null indicates first initialization
+}
+
+function saveSeenTransactions(seenIds) {
+  writeFileSync(SEEN_TX_FILE, JSON.stringify(seenIds, null, 2), "utf-8");
+}
+
+function getTxId(t) {
+  return `edenred-${t.transactionDate}-${t.transactionName}-${t.amount}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,13 +94,8 @@ async function edenredLogin(email, password) {
     throw new Error(`Login failed: ${body?.internalCode || res.status}`);
   }
 
-  // Direct token (no 2FA)
   if (body?.data?.token) return { token: body.data.token, challengeId: null };
-
-  // 2FA required
-  if (body?.data?.challengeId) {
-    return { token: null, challengeId: body.data.challengeId };
-  }
+  if (body?.data?.challengeId) return { token: null, challengeId: body.data.challengeId };
 
   throw new Error("Unexpected login response");
 }
@@ -152,7 +163,7 @@ async function edenredGetTransactions(token, cardId) {
 }
 
 // ---------------------------------------------------------------------------
-// Token cache
+// Token Cache
 // ---------------------------------------------------------------------------
 
 function loadCachedToken() {
@@ -167,7 +178,7 @@ function saveCachedToken(token) {
 }
 
 // ---------------------------------------------------------------------------
-// Edenred auth flow (interactive)
+// Edenred Auth (Interactive)
 // ---------------------------------------------------------------------------
 
 async function authenticateInteractive(email, password) {
@@ -189,6 +200,75 @@ async function authenticateInteractive(email, password) {
 }
 
 // ---------------------------------------------------------------------------
+// Discord Notifications
+// ---------------------------------------------------------------------------
+
+async function sendDiscordNotification(webhookUrl, transaction, balance, card) {
+  const isDeposit = transaction.amount >= 0;
+  const absAmount = Math.abs(transaction.amount).toFixed(2);
+  const sign = isDeposit ? "+" : "-";
+  const color = isDeposit ? 0x2ecc71 : 0xe74c3c; // Green or Red
+  const title = isDeposit ? "💰 Edenred — Entrada de Saldo" : "💳 Edenred — Novo Movimento";
+  const cardLast4 = card?.number ? card.number.slice(-4) : "Card";
+
+  const dateFormatted = transaction.transactionDate
+    ? transaction.transactionDate.split(".")[0].replace("T", " ")
+    : "Agora";
+
+  const payload = {
+    username: "Edenred PT",
+    avatar_url: "https://www.myedenred.pt/images/favicon.png",
+    embeds: [
+      {
+        title,
+        color,
+        fields: [
+          {
+            name: "🏬 Entidade / Comerciante",
+            value: transaction.transactionName || "Edenred",
+            inline: false,
+          },
+          {
+            name: isDeposit ? "💵 Valor Creditado" : "💸 Valor Gasto",
+            value: `**${sign}${absAmount} €**`,
+            inline: true,
+          },
+          {
+            name: "📊 Saldo Atual",
+            value: `**${balance.toFixed(2)} €**`,
+            inline: true,
+          },
+          {
+            name: "📅 Data",
+            value: dateFormatted,
+            inline: true,
+          },
+        ],
+        footer: {
+          text: `Cartão •••• ${cardLast4}`,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  };
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.error(`   ⚠️ Discord webhook failed: HTTP ${res.status}`);
+    } else {
+      console.log(`   🔔 Sent Discord alert for: ${transaction.transactionName} (${sign}${absAmount}€)`);
+    }
+  } catch (err) {
+    console.error(`   ⚠️ Discord notification error: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Actual Budget
 // ---------------------------------------------------------------------------
 
@@ -200,7 +280,6 @@ async function syncToActualBudget(env, transactions, balance) {
 
   if (!serverUrl || !serverPassword || !syncId) {
     console.log("⚠️  Actual Budget not configured — skipping sync");
-    console.log("   Set ACTUAL_SERVER_URL, ACTUAL_PASSWORD, and ACTUAL_SYNC_ID");
     return;
   }
 
@@ -213,7 +292,6 @@ async function syncToActualBudget(env, transactions, balance) {
   });
   await api.downloadBudget(syncId);
 
-  // Find or create the account
   const accounts = await api.getAccounts();
   let account = accounts.find(
     (a) => a.name.toLowerCase() === accountName.toLowerCase()
@@ -225,7 +303,6 @@ async function syncToActualBudget(env, transactions, balance) {
     account = { id, name: accountName };
   }
 
-  // Convert Edenred transactions to Actual Budget format
   const abTransactions = transactions.map((t) => {
     const date = parseEdenredDate(t.transactionDate);
     const amountCents = Math.round((t.amount || 0) * 100);
@@ -234,7 +311,7 @@ async function syncToActualBudget(env, transactions, balance) {
       account: account.id,
       amount: amountCents,
       payee_name: t.transactionName || "Edenred",
-      imported_id: `edenred-${t.transactionDate}-${t.transactionName}-${t.amount}`,
+      imported_id: getTxId(t),
       cleared: false,
     };
   });
@@ -244,8 +321,6 @@ async function syncToActualBudget(env, transactions, balance) {
     console.log(
       `   ✅ Imported: ${result.added?.length || 0} new, ${result.updated?.length || 0} updated`
     );
-  } else {
-    console.log("   No transactions to import");
   }
 
   await api.shutdown();
@@ -253,11 +328,9 @@ async function syncToActualBudget(env, transactions, balance) {
 
 function parseEdenredDate(dateStr) {
   if (!dateStr) return new Date().toISOString().slice(0, 10);
-  // ISO format: "2026-08-31T13:09:47..."
   if (dateStr.includes("T") || dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
     return dateStr.slice(0, 10);
   }
-  // Slash format: "MM/DD/YYYY HH:MM:SS"
   const parts = dateStr.split(" ")[0].split("/");
   if (parts.length === 3) {
     return `${parts[2]}-${parts[0].padStart(2, "0")}-${parts[1].padStart(2, "0")}`;
@@ -272,20 +345,20 @@ function parseEdenredDate(dateStr) {
 async function main() {
   const env = loadEnv();
   const isSetup = process.argv.includes("--setup");
+  const isTestDiscord = process.argv.includes("--test-discord");
 
   const email = env.EDENRED_EMAIL;
   const password = env.EDENRED_PASSWORD;
+  const discordWebhook = env.DISCORD_WEBHOOK_URL;
 
   if (!email || !password) {
     console.error("❌ Set EDENRED_EMAIL and EDENRED_PASSWORD in .env file");
     process.exit(1);
   }
 
-  // Authenticate
   let token = isSetup ? null : loadCachedToken();
 
   if (token) {
-    // Verify cached token still works
     try {
       await edenredGetCards(token);
       console.log("🔑 Using cached token");
@@ -303,35 +376,50 @@ async function main() {
     token = await authenticateInteractive(email, password);
   }
 
-  // Fetch data
   console.log("\n📋 Fetching Edenred data...");
   const cards = await edenredGetCards(token);
   console.log(`   Found ${cards.length} card(s)`);
 
+  let seenTx = loadSeenTransactions();
+  const isFirstRun = seenTx === null;
+  if (isFirstRun) seenTx = [];
+
   for (const card of cards) {
     console.log(`\n💳 Card: ${card.number} (${card.ownerName})`);
-    const { balance, transactions } = await edenredGetTransactions(
-      token,
-      card.id
-    );
+    const { balance, transactions } = await edenredGetTransactions(token, card.id);
     console.log(`   Balance: €${balance}`);
     console.log(`   Transactions: ${transactions.length}`);
 
-    // Show recent transactions
-    for (const t of transactions.slice(0, 5)) {
-      const sign = t.amount >= 0 ? "+" : "";
-      console.log(
-        `   ${t.transactionDate?.split(" ")[0]} | ${t.transactionName} | ${sign}${t.amount}€`
-      );
+    // Check for new transactions for Discord notifications
+    const newTxList = [];
+    for (const t of transactions) {
+      const id = getTxId(t);
+      if (!seenTx.includes(id)) {
+        newTxList.push(t);
+        seenTx.push(id);
+      }
     }
-    if (transactions.length > 5) {
-      console.log(`   ... and ${transactions.length - 5} more`);
+
+    // Send notifications
+    if (discordWebhook) {
+      if (isTestDiscord && transactions.length > 0) {
+        console.log("\n🧪 Sending test Discord notification for latest transaction...");
+        await sendDiscordNotification(discordWebhook, transactions[0], balance, card);
+      } else if (!isFirstRun && newTxList.length > 0) {
+        console.log(`\n🔔 Sending ${newTxList.length} Discord notification(s)...`);
+        for (const t of newTxList) {
+          await sendDiscordNotification(discordWebhook, t, balance, card);
+        }
+      } else if (isFirstRun) {
+        console.log(`   ℹ️ Initialized Discord seen list with ${transactions.length} historical transactions.`);
+      }
     }
 
     // Sync to Actual Budget
     await syncToActualBudget(env, transactions, balance);
   }
 
+  saveSeenTransactions(seenTx);
   console.log("\n✅ Done!");
 }
 
