@@ -1,0 +1,29 @@
+services:
+  edenred-sync:
+    build: .
+    container_name: edenred-sync
+    restart: unless-stopped
+    environment:
+      # Edenred Credentials
+      - EDENRED_EMAIL=your-email@gmail.com
+      - EDENRED_PASSWORD=your-edenred-password
+
+      # Automated 2FA via Gmail App Password (100% Zero-Touch)
+      # Generate at: https://myaccount.google.com/apppasswords
+      - GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+
+      # Actual Budget Configuration (Optional)
+      - ACTUAL_SERVER_URL=http://actual-server:5006
+      - ACTUAL_PASSWORD=your-actual-password
+      - ACTUAL_SYNC_ID=your-budget-sync-id
+      - ACTUAL_ACCOUNT_NAME=Edenred
+
+      # Discord Notifications (Optional)
+      - DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+      # Sync Schedule (Cron format, default: every 2 hours)
+      - CRON_SCHEDULE=0 */2 * * *
+    volumes:
+      # Persistent storage for session tokens and cache
+      - ./data:/app/data
+      - ./tokens:/app/.token_cache

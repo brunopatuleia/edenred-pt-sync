@@ -51,29 +51,57 @@ An automated bridge for **MyEdenred Portugal** that connects your meal card move
 
 ## 🚀 Quick Start
 
-### 1. Prerequisites
+You can run this tool either **directly with Node.js / Cron** or in **Docker**.
 
-- **Node.js** v18 or later (Node 20+ recommended)
-- **npm** v10+
+### Option A: Docker (Recommended for Container setups)
 
-### 2. Installation
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/brunopatuleia/edenred-pt-sync.git
+   cd edenred-pt-sync
+   ```
 
-Clone the repository and install dependencies:
+2. Edit `docker-compose.yml` with your credentials.
 
-```bash
-git clone https://github.com/brunopatuleia/edenred-pt-sync.git
-npm install
-```
+3. Start the container:
+   ```bash
+   docker compose up -d
+   ```
 
-### 3. Configuration
+The container will run an initial sync immediately and then keep syncing on your configured `CRON_SCHEDULE` (default: every 2 hours).
 
-Copy the example environment file:
+---
 
-```bash
-cp .env.example .env
-```
+### Option B: Direct with Node.js & Cron (Zero RAM overhead)
 
-Edit `.env` with your settings:
+1. Prerequisites: **Node.js 20+** and **npm**
+
+2. Clone and install dependencies:
+   ```bash
+   git clone https://github.com/brunopatuleia/edenred-pt-sync.git
+   cd edenred-pt-sync
+   npm install
+   ```
+
+3. Configure environment:
+   ```bash
+   cp .env.example .env
+   # Edit .env with your credentials
+   ```
+
+4. Run sync:
+   ```bash
+   node sync.mjs
+   ```
+
+5. Schedule with `crontab -e`:
+   ```bash
+   0 */2 * * * cd /path/to/edenred-pt-sync && /usr/bin/node sync.mjs >> /var/log/edenred-sync.log 2>&1
+   ```
+
+---
+
+### Configuration (Environment Variables)
 
 ```env
 # ==========================================

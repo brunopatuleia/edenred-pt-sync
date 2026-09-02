@@ -27,8 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Automated 2FA Email Solver**:
   - Zero-touch 2FA verification using Gmail IMAP (`imapflow` + `mailparser`).
   - Automatic polling, extraction of 5-digit security codes from incoming Edenred emails, and challenge resolution.
+- **Docker Support**:
+  - Added lightweight `Dockerfile` (Node 20 Alpine) with built-in cron daemon.
+  - Added `docker-compose.yml` for one-click deployment.
 - **Scheduling**:
-  - Optimized cron scheduling for 2-hour synchronization intervals.
+  - Configurable cron schedule via `CRON_SCHEDULE` environment variable.
 - **Documentation & Structure**:
   - Comprehensive JSDoc annotations throughout `sync.mjs`.
   - Full README with setup guide, architecture diagrams, and Maestro/AI credits.
+
