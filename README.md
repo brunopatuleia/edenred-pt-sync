@@ -61,7 +61,7 @@ An automated bridge for **MyEdenred Portugal** that connects your meal card move
 Clone the repository and install dependencies:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/edenred-pt-sync.git
+git clone https://github.com/brunopatuleia/edenred-pt-sync.git
 cd edenred-pt-sync
 npm install
 ```
